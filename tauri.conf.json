@@ -1,0 +1,61 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "packet-sniffer",
+  "version": "0.1.0",
+  "identifier": "com.packet-sniffer.app",
+  "build": {
+    
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Meter",
+        "fullscreen": false,
+        "width": 500,
+        "height": 350,
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "minWidth": 400,
+        "minHeight": 120,
+        "alwaysOnTop": true,
+        "visible": false
+      },
+      {
+        "label": "logs",
+        "title": "History",
+        "url": "logs",
+        "minWidth": 650,
+        "minHeight": 300,
+        "width": 800,
+        "height": 500,
+        "decorations": true,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "createUpdaterArtifacts": true,
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJFODY2MkQxRkRGQUNFRkIKUldUN3p2cjkwV0tHTHRKemo5WlhIRnpWZEVlTW1QcXRuNmZ1K2tCT3FyMjZxNXJla29aeUsrMzYK",
+      "endpoints": [
+        "https://github.com/Jozefpodlecki/packet-sniffer/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}
