@@ -1,31 +1,22 @@
+#![allow(warnings)]
+
 use handlers::generate_handlers;
-use log::error;
 use tauri::generate_context;
 use tauri_plugin_log::{Target, TargetKind};
-
+use tauri::Context;
 mod handlers;
 mod setup;
+mod hook;
+mod updater;
+mod process_watcher;
+mod models;
+mod aws_iprange;
+mod processor;
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    std::panic::set_hook(Box::new(|info| {
-        let payload = info.payload();
-        let message = if let Some(s) = payload.downcast_ref::<&str>() {
-            s.to_string()
-        } else if let Some(s) = payload.downcast_ref::<String>() {
-            s.clone()
-        } else {
-            "Unknown panic message".to_string()
-        };
+    hook::set_hook();
 
-        let location = info.location().map_or("unknown location".to_string(), |location| {
-            format!("{}:{}", location.file(), location.line())
-        });
-
-        error!("Panicked at '{}', {}", message, location);
-    }));
-
-    let context = generate_context!();
+    let context: Context = generate_context!();
 
     tauri::Builder::default()
             .plugin(tauri_plugin_log::Builder::new()
