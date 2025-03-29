@@ -5,7 +5,7 @@ use std::{
 use log::{debug, error, info};
 use tauri::{async_runtime::JoinHandle, App, AppHandle, Emitter, Listener, Manager};
 use tokio::{runtime::{Handle, Runtime}, sync::Mutex};
-use crate::{models::Message, process_watcher::{self, ProcessWatcher}, processor::Processor, updater::*};
+use crate::{app_ready_state::AppReadyState, models::Message, process_watcher::{self, ProcessWatcher}, processor::Processor, updater::*};
 
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn Error>> {
     // #[cfg(debug_assertions)]
@@ -19,6 +19,9 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn Error>> {
     let app_updater = AppUpdater::new(app_handle.clone());
     let app_updater: Arc<Mutex<AppUpdater>> = Arc::new(Mutex::new(app_updater));
     let process_watcher: Arc<Mutex<ProcessWatcher>> = Arc::new(Mutex::new(ProcessWatcher::new()));
+    let app_ready_state: Arc<AppReadyState> = Arc::new(AppReadyState::new());
+
+    app.manage(app_ready_state.clone());
 
     {
         let app_updater = app_updater.clone();
@@ -51,8 +54,14 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn Error>> {
         });
     }
 
-    let mut background_worker = BackgroundWorker::new(app_handle, app_updater, process_watcher);
+    let mut background_worker = BackgroundWorker::new(
+        app_handle,
+        app_updater,
+        process_watcher,
+        app_ready_state
+    );
     background_worker.start();
+ 
 
     Ok(())
 }
@@ -61,6 +70,7 @@ pub struct BackgroundWorker {
     app_handle: AppHandle,
     app_updater: Arc<Mutex<AppUpdater>>,
     process_watcher: Arc<Mutex<ProcessWatcher>>,
+    app_ready_state: Arc<AppReadyState>,
     handle: Option<JoinHandle<anyhow::Result<()>>>
 }
 
@@ -68,11 +78,13 @@ impl BackgroundWorker {
     pub fn new(
         app_handle: AppHandle,
         app_updater: Arc<Mutex<AppUpdater>>,
-        process_watcher: Arc<Mutex<ProcessWatcher>>,) -> Self {
+        process_watcher: Arc<Mutex<ProcessWatcher>>,
+        app_ready_state: Arc<AppReadyState>) -> Self {
         Self {
             app_handle,
             app_updater,
             process_watcher,
+            app_ready_state,
             handle: None
         }
     }
@@ -82,8 +94,11 @@ impl BackgroundWorker {
         let mut processor = Processor::new(self.app_handle.clone());
         let app_handle = self.app_handle.clone();
         let app_updater = self.app_updater.clone();
+        let app_ready_state = self.app_ready_state.clone();
 
         let handle = tauri::async_runtime::spawn(async move {
+            info!("waiting for load");
+            app_ready_state.wait_for_ready();
             setup_update_checker(app_handle.clone(), app_updater).await?;
     
             let process_name = "client_server.exe";

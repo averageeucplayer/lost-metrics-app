@@ -12,6 +12,7 @@ mod process_watcher;
 mod models;
 mod aws_iprange;
 mod processor;
+mod app_ready_state;
 
 pub fn run() {
     hook::set_hook();

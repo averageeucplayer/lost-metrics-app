@@ -13,6 +13,17 @@ pub enum Message {
 }
 
 #[derive(Debug, Default, Clone, Serialize)]
+pub struct Settings {
+
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct LoadResult {
+    pub version: String,
+    pub settings: Settings
+}
+
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct Encounter {
     pub id: Uuid,
     pub updated_on: DateTime<Utc>,
