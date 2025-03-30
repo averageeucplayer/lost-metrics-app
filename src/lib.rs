@@ -13,6 +13,8 @@ mod models;
 mod aws_iprange;
 mod processor;
 mod app_ready_state;
+mod settings_manager;
+mod error;
 
 pub fn run() {
     hook::set_hook();

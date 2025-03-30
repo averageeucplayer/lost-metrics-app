@@ -4,32 +4,65 @@ use std::{
 };
 use log::{debug, error, info};
 use tauri::{async_runtime::JoinHandle, App, AppHandle, Emitter, Listener, Manager};
-use tokio::{runtime::{Handle, Runtime}, sync::Mutex};
-use crate::{app_ready_state::AppReadyState, models::Message, process_watcher::{self, ProcessWatcher}, processor::Processor, updater::*};
+use tokio::{runtime::{Handle, Runtime}, sync::Mutex, task};
+use crate::{app_ready_state::AppReadyState, models::{Message, SnifferSettings}, process_watcher::{self, ProcessWatcher}, processor::Processor, settings_manager::{self, SettingsManager}, updater::*};
 
 pub fn setup_app(app: &mut App) -> Result<(), Box<dyn Error>> {
-    // #[cfg(debug_assertions)]
-    // {
-    //     let window = app.get_webview_window("main").unwrap();
-    //     window.open_devtools();
-    // }
+    #[cfg(debug_assertions)]
+    {
+        let window = app.get_webview_window("main").unwrap();
+        window.open_devtools();
+    }
 
     let app_handle = app.handle().clone();
     let version = app_handle.package_info().version.clone();
     let app_updater = AppUpdater::new(app_handle.clone());
     let app_updater: Arc<Mutex<AppUpdater>> = Arc::new(Mutex::new(app_updater));
     let process_watcher: Arc<Mutex<ProcessWatcher>> = Arc::new(Mutex::new(ProcessWatcher::new()));
+    let settings_manager = Arc::new(SettingsManager::new("settings.json".into()));
     let app_ready_state: Arc<AppReadyState> = Arc::new(AppReadyState::new());
 
+    app.manage(settings_manager.clone());
     app.manage(app_ready_state.clone());
 
+    let rt = Handle::current();
+    let settings = task::block_in_place(|| {
+        rt.block_on(async { settings_manager.get_or_create_default().await })
+    })?;
+
+    setup_update_checker_callbacks(
+        app_handle.clone(),
+        app_updater.clone(),
+        process_watcher.clone());
+
+    let mut background_worker = BackgroundWorker::new(
+        app_handle,
+        app_updater,
+        process_watcher,
+        app_ready_state,
+        settings.sniffer
+    );
+    background_worker.start();
+ 
+
+    Ok(())
+}
+
+pub fn setup_update_checker_callbacks(
+    app_handle: AppHandle,
+    app_updater: Arc<Mutex<AppUpdater>>,
+    process_watcher: Arc<Mutex<ProcessWatcher>>) {
     {
         let app_updater = app_updater.clone();
         let app_handle_emit = app_handle.clone();
         app_handle.listen_any("check-update", move |event| {
             match app_updater.try_lock() {
                 Ok(app_updater) => {
-                    app_updater.force_periodic_check();
+
+                    if app_updater.is_background_checker_running() {
+                        app_updater.force_periodic_check();
+                    }
+
                 },
                 Err(err) => {
                     app_handle_emit.emit("app-state", "update-check-already-running").unwrap();
@@ -53,17 +86,6 @@ pub fn setup_app(app: &mut App) -> Result<(), Box<dyn Error>> {
             });
         });
     }
-
-    let mut background_worker = BackgroundWorker::new(
-        app_handle,
-        app_updater,
-        process_watcher,
-        app_ready_state
-    );
-    background_worker.start();
- 
-
-    Ok(())
 }
 
 pub struct BackgroundWorker {
@@ -71,6 +93,7 @@ pub struct BackgroundWorker {
     app_updater: Arc<Mutex<AppUpdater>>,
     process_watcher: Arc<Mutex<ProcessWatcher>>,
     app_ready_state: Arc<AppReadyState>,
+    sniffer_settings: SnifferSettings,
     handle: Option<JoinHandle<anyhow::Result<()>>>
 }
 
@@ -79,12 +102,14 @@ impl BackgroundWorker {
         app_handle: AppHandle,
         app_updater: Arc<Mutex<AppUpdater>>,
         process_watcher: Arc<Mutex<ProcessWatcher>>,
-        app_ready_state: Arc<AppReadyState>) -> Self {
+        app_ready_state: Arc<AppReadyState>,
+        sniffer_settings: SnifferSettings) -> Self {
         Self {
             app_handle,
             app_updater,
             process_watcher,
             app_ready_state,
+            sniffer_settings,
             handle: None
         }
     }
@@ -95,24 +120,26 @@ impl BackgroundWorker {
         let app_handle = self.app_handle.clone();
         let app_updater = self.app_updater.clone();
         let app_ready_state = self.app_ready_state.clone();
+        let sniffer_settings = self.sniffer_settings.clone();
 
         let handle = tauri::async_runtime::spawn(async move {
             info!("waiting for load");
             app_ready_state.wait_for_ready();
-            setup_update_checker(app_handle.clone(), app_updater).await?;
-    
-            let process_name = "client_server.exe";
-            let port = 6041;
-            let timeout = Duration::from_secs(2);
+            // setup_update_checker(app_handle.clone(), app_updater).await?;
     
             let rx = {
                 let mut process_watcher = process_watcher.lock().await;
-                process_watcher.start(process_name, port)
+                process_watcher.start(&sniffer_settings.process_name, sniffer_settings.port)
             };
     
+            let mut last_message = Message::Unknown;
+
             loop {
-                let message = match rx.recv_timeout(timeout) {
-                    Ok(message) => message,
+                let message = match rx.recv_timeout(sniffer_settings.timeout) {
+                    Ok(message) => {
+                        last_message = message.clone();
+                        message
+                    },
                     Err(_) => {
                         let process_watcher = process_watcher.lock().await;
                         
@@ -123,14 +150,14 @@ impl BackgroundWorker {
                         Message::Unknown
                     },
                 };
+
+                app_handle.emit("app-state", &last_message)?;
     
                 match message {
                     Message::ProcessListening(region) => {
-                        app_handle.emit("app-state", "process-listening")?;
                         processor.start(region);
                     },
                     Message::ProcesStopped => {
-                        app_handle.emit("app-state", "process-stopped")?;
                         processor.stop();
                     },
                     _ => {}

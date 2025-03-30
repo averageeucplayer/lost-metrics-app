@@ -86,6 +86,10 @@ impl AppUpdater {
         Ok(())
     }
 
+    pub fn is_background_checker_running(&self) -> bool {
+        self.handle.is_some()
+    }
+
     pub fn force_periodic_check(&self) {
         self.wake_up_signal.notify_one();
     }
