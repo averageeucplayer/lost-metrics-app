@@ -7,30 +7,35 @@ use netstat::*;
 use tokio::runtime::Runtime;
 use anyhow::*;
 
-use crate::{aws_iprange::{FakeIpRanges, IpPrefix}, models::Message};
+use crate::{aws_iprange::{FakeIpRanges, IpPrefix}, models::ProcessState};
 
 pub struct ProcessWatcher {
     handle: Option<JoinHandle<Result<()>>>,
     close_flag: Arc<AtomicBool>,
+    check_interval: Duration
 }
 
 impl ProcessWatcher {
-    pub fn new() -> Self {
+    pub fn new(check_interval: Duration) -> Self {
         Self {
             handle: None,
             close_flag: Arc::new(AtomicBool::new(false)),
+            check_interval
         }
     }
 
-    pub fn start(&mut self, process_name: &str, port: u16) -> Receiver<Message> {
+    pub fn start(&mut self, process_name: &str, port: u16) -> Receiver<ProcessState> {
 
-        let (tx, rx) = std::sync::mpsc::channel::<Message>();
+        let (tx, rx) = std::sync::mpsc::channel::<ProcessState>();
         let process_name = OsString::from(process_name);
         let close_flag = self.close_flag.clone();
+        let check_interval = self.check_interval.clone();
         let handle = std::thread::spawn(move || Self::check_periodically(
             process_name,
             port,
-            close_flag, tx));
+            close_flag,
+            tx,
+            check_interval));
 
         self.handle = Some(handle);
 
@@ -41,17 +46,17 @@ impl ProcessWatcher {
         process_name: OsString,
         port: u16,
         close_flag: Arc<AtomicBool>,
-        tx: Sender<Message>,
+        tx: Sender<ProcessState>,
+        check_interval: Duration
     ) -> Result<()> {
         let mut system = System::new_all();
-        let check_timeout = Duration::from_secs(5);
         // let ip_range = AwsIpRange::new();
         let ip_range = FakeIpRanges::new();
         let rt = Runtime::new()?;
         let ip_ranges = rt.block_on(async { ip_range.get().await })?;
-        let mut last_message = Message::Unknown;
+        let mut last_message = ProcessState::Unknown;
         let mut process_id = None;
-        sleep(check_timeout);
+        sleep(check_interval);
 
         while !close_flag.load(Ordering::Relaxed) {
 
@@ -74,23 +79,23 @@ impl ProcessWatcher {
 
             match process_id {
                 Some(process_id) => {
-                    Self::send_message(&tx, &mut last_message, Message::ProcessRunning)?;
+                    Self::send_message(&tx, &mut last_message, ProcessState::ProcessRunning)?;
 
                     let ip_addrs = Self::find_process_ips(process_id.as_u32(), port)?;
 
                     if ip_addrs.is_empty() {
-                        Self::send_message(&tx, &mut last_message, Message::ProcessNotListening)?;
-                        sleep(check_timeout);
+                        Self::send_message(&tx, &mut last_message, ProcessState::ProcessNotListening)?;
+                        sleep(check_interval);
                         continue;
                     }
       
                     for ip_addr in &ip_addrs {
                         match Self::match_ip(&ip_ranges.prefixes, ip_addr)? {
                             Some(region) => {
-                                Self::send_message(&tx, &mut last_message, Message::ProcessListening(region))?;
+                                Self::send_message(&tx, &mut last_message, ProcessState::ProcessListening(region))?;
                             },
                             None => {
-                                Self::send_message(&tx, &mut last_message, Message::ProcessNotListening)?;
+                                Self::send_message(&tx, &mut last_message, ProcessState::ProcessNotListening)?;
                             },
                         }
                     }
@@ -101,7 +106,7 @@ impl ProcessWatcher {
                 },
             }
 
-            sleep(check_timeout);
+            sleep(check_interval);
         }
 
         Ok(())
@@ -140,10 +145,10 @@ impl ProcessWatcher {
         Ok(None)
     }
 
-    fn send_message(tx: &Sender<Message>, last_message: &mut Message, new_message: Message) -> Result<()> {
+    fn send_message(tx: &Sender<ProcessState>, last_message: &mut ProcessState, new_message: ProcessState) -> Result<()> {
 
-        let should_skip = new_message == Message::ProcessRunning
-            && matches!(*last_message, Message::ProcessNotListening | Message::ProcessListening(_));
+        let should_skip = new_message == ProcessState::ProcessRunning
+            && matches!(*last_message, ProcessState::ProcessNotListening | ProcessState::ProcessListening(_));
 
         if should_skip {
             return Ok(());
@@ -156,14 +161,14 @@ impl ProcessWatcher {
         Ok(())
     }
 
-    fn handle_process_stopped(tx: &Sender<Message>, last_message: &mut Message) -> Result<()> {
+    fn handle_process_stopped(tx: &Sender<ProcessState>, last_message: &mut ProcessState) -> Result<()> {
         let new_message = match last_message {
-            Message::Unknown => Message::ProcessNotRunning,
-            Message::ProcessNotRunning => return Ok(()),
-            Message::ProcessRunning => Message::ProcesStopped,
-            Message::ProcessNotListening => Message::ProcesStopped,
-            Message::ProcessListening(_) => Message::ProcesStopped,
-            Message::ProcesStopped => return Ok(()),
+            ProcessState::Unknown => ProcessState::ProcessNotRunning,
+            ProcessState::ProcessNotRunning => return Ok(()),
+            ProcessState::ProcessRunning => ProcessState::ProcesStopped,
+            ProcessState::ProcessNotListening => ProcessState::ProcesStopped,
+            ProcessState::ProcessListening(_) => ProcessState::ProcesStopped,
+            ProcessState::ProcesStopped => return Ok(()),
         };
 
         Self::send_message(tx, last_message, new_message)

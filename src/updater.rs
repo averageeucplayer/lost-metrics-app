@@ -1,16 +1,12 @@
 use std::{error::Error, sync::Arc, time::Duration};
 
+use chrono::Utc;
 use log::*;
 use tauri::{async_runtime::JoinHandle, AppHandle, Emitter};
 use tauri_plugin_updater::{Result, Update, Updater, UpdaterExt};
 use tokio::{sync::{Mutex, Notify}, time::sleep};
 
-pub enum UpdateResult {
-    Unknown,
-    LatestVersion,
-    NewVersion,
-    Error(Box<dyn Error + Send + Sync>)
-}
+use crate::models::{UpdaterResult, UpdaterState};
 
 pub struct AppUpdater {
     handle: Option<JoinHandle<()>>,
@@ -41,10 +37,10 @@ impl AppUpdater {
         }
     }
 
-    pub async fn check(&mut self) -> UpdateResult {
+    pub async fn check(&mut self) -> UpdaterState {
 
         if self.update_info.is_some() {
-            return UpdateResult::NewVersion;
+            return UpdaterState::NewVersion;
         }
        
         let updater = self.updater.as_ref().expect("Invalid state");
@@ -54,10 +50,11 @@ impl AppUpdater {
         match check_result {
             Ok(Some(update)) => {
                 self.update_info = Some(update);
-                UpdateResult::NewVersion
+                UpdaterState::NewVersion
             },
-            Ok(None) => UpdateResult::Unknown,
-            Err(err) => UpdateResult::Error(err.into()),
+            Ok(None) => UpdaterState::Unknown,
+            // Edge case, either app is deployed for the first time or issues with github
+            Err(err) => UpdaterState::Error(err.to_string()),
         }
     }
 
@@ -73,15 +70,17 @@ impl AppUpdater {
 
         let update_info = self.update_info.as_ref().expect("Invalid state");
 
-        update_info.download_and_install(
-            |chunk_length, _| {
-                self.downloaded += chunk_length;
-            },
-            || {
-                self.has_downloaded = true;
-            },
-            )
-            .await?;
+        info!("would download and install");
+        self.has_downloaded = true;
+        // update_info.download_and_install(
+        //     |chunk_length, _| {
+        //         self.downloaded += chunk_length;
+        //     },
+        //     || {
+        //         self.has_downloaded = true;
+        //     },
+        //     )
+        //     .await?;
 
         Ok(())
     }
@@ -120,23 +119,12 @@ pub async fn run_periodically(app_updater: Arc<Mutex<AppUpdater>>, app_handle: A
                 }
 
                 let mut app_updater = app_updater.lock().await;
-                
-                match app_updater.check().await {
-                    UpdateResult::Unknown => {
-                        app_handle.emit("app-state", "unknown").unwrap();
-                    },
-                    UpdateResult::NewVersion => {
-                        app_handle.emit("app-state", "new-version").unwrap();
-                        return;
-                    },
-                    UpdateResult::LatestVersion => {
-                        app_handle.emit("app-state", "latest-version").unwrap();
-                    },
-                    UpdateResult::Error(error) => {
-                        error!("Periodic update check: {:?}", error);
-                        app_handle.emit("app-state", "latest-version").unwrap();
-                    }
-                }
+                let mut result = UpdaterResult {
+                    checked_on: Utc::now(),
+                    state: UpdaterState::Unknown,
+                };
+
+                app_handle.emit("updater", result).unwrap();
             }
         })
     };
@@ -154,21 +142,22 @@ pub async fn setup_update_checker(app_handle: AppHandle, app_updater: Arc<Mutex<
     };
 
     match update_result {
-        UpdateResult::NewVersion => {
+        UpdaterState::NewVersion => {
 
-            app_handle.emit("app-state", "new-version")?;
+            app_handle.emit("updater", "new-version")?;
             let mut app_updater = app_updater.lock().await;
             
             match app_updater.download_and_install().await {
                 Ok(_) => {
-                    app_handle.restart();
+                    info!("would restart")
+                    // app_handle.restart();
                 },
                 Err(err) => {
                     error!("Could not download and install: {:?}", err);
                 },
             }
         },
-        UpdateResult::Error(error) => {
+        UpdaterState::Error(error) => {
             error!("Update check: {:?}", error);
             run_periodically(app_updater, app_handle, update_check_timeout).await;
         },

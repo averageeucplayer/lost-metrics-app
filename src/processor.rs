@@ -7,7 +7,7 @@ use anyhow::*;
 use tokio::time::sleep;
 use uuid::Uuid;
 
-use crate::models::Encounter;
+use crate::models::{Boss, Encounter};
 
 pub struct Processor {
     app_handle: AppHandle,
@@ -35,6 +35,8 @@ impl Processor {
                 id: Uuid::now_v7(),
                 updated_on: Utc::now(),
                 total_damage: 0,
+                participants: vec![],
+                boss: Boss { id: 1 }
             };
 
             loop {
