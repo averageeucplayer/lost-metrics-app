@@ -86,3 +86,46 @@ pub struct Boss {
 pub struct RunSimulation {
     
 }
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetStatsResult {
+    pub class_popularity: Vec<Metric>,
+    pub item_level_breakdown: Vec<Metric>,
+    pub server_population: Vec<Metric>,
+    pub metrics: Vec<Metric>
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerPopulation {
+    pub na: NorthAmericaNode,
+    pub eu: EuropeNode
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct NorthAmericaNode {
+    pub name: String,
+    pub naw: Vec<Metric>,
+    pub nae: Vec<Metric>
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct EuropeNode {
+    pub name: String,
+    pub metrics: Vec<Metric>
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Metric {
+    pub name: String,
+    pub value: f32
+}
+
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetPastEncountersCriteria {
+    
+}
