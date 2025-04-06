@@ -2,6 +2,8 @@
 pub enum AppError {
     #[error("Generic error")]
     Generic(#[from] Box<dyn std::error::Error>),
+    #[error("Serialization")]
+    Serde(#[from] serde_json::error::Error),
     #[error("Unknown error")]
     Unknown
 }

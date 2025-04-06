@@ -1,0 +1,8 @@
+{
+    "version": "^0.0.1",
+    "sniffer": {
+        "processName": "client_server.exe",
+        "port": 6040,
+        "checkInterval": "10s"
+    }
+}

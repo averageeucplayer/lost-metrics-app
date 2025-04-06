@@ -7,11 +7,11 @@ use crate::{error::AppError, models::GetStatsResult};
 
 const DATA: &str = r#"{
     "classPopularity": [
-        { "name": "Souleater", value: 50154 },
-        { "name": "Paladin", value: 47719 },
-        { "name": "Artist", value: 44996 },
-        { "name": "Slayer", value: 40533 },
-        { "name": "Sorceress", value: 39936 }
+        { "name": "Souleater", "value": 50154 },
+        { "name": "Paladin", "value": 47719 },
+        { "name": "Artist", "value": 44996 },
+        { "name": "Slayer", "value": 40533 },
+        { "name": "Sorceress", "value": 39936 }
     ],
     "itemLevelBreakdown": [
         { "name": "1700+", "value": 15544 },
@@ -22,7 +22,7 @@ const DATA: &str = r#"{
     ],
     "serverPopulation": {
         "na": {
-            "name": "North America",
+            "name": "NA",
             "naw": [
                 { "name": "Brelshaza", "value": 73361 },
                 { "name": "Thaemine", "value": 68091 }
@@ -36,7 +36,7 @@ const DATA: &str = r#"{
             ]
         },
         "eu": {
-            "name": "Europe",
+            "name": "EU",
             "metrics": [
                 { "name": "Ratik", "value": 70678 },
                 { "name": "Elpon", "value": 62986 },
@@ -58,8 +58,7 @@ const DATA: &str = r#"{
 #[command]
 pub async fn get_stats() -> Result<GetStatsResult, AppError> {
 
-    let stats = serde_json::from_str(DATA)
-        .map_err(|err| Box::new(err) as Box<dyn std::error::Error>)?;
+    let stats = serde_json::from_str(DATA)?;
 
     Ok(stats)
 }

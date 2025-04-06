@@ -1,13 +1,13 @@
-use std::time::Duration;
+use std::{sync::{Arc, Mutex}, thread::JoinHandle, time::Duration};
 
 use chrono::Utc;
 use log::debug;
-use tauri::{async_runtime::JoinHandle, AppHandle, Emitter};
+use tauri::{AppHandle, Emitter};
 use anyhow::*;
-use tokio::time::sleep;
+use tokio::{runtime::Runtime, time::sleep};
 use uuid::Uuid;
 
-use crate::models::{Boss, Encounter};
+use crate::{fake_encounter::FakeEncounter, models::{Boss, Encounter, Player}};
 
 pub struct Processor {
     app_handle: AppHandle,
@@ -27,34 +27,35 @@ impl Processor {
         debug!("start");
         let app_handle = self.app_handle.clone();
         let duration  = Duration::from_secs(1);
-
+        
         // TO-DO Download dll from https://github.com/averageeucplayer/lost-metrics-sniffer/releases/latest
         // Then follow logic as in lost-metrics-console
-        let handle: JoinHandle<()> = tauri::async_runtime::spawn(async move {
-            let mut encounter = Encounter {
-                id: Uuid::now_v7(),
-                updated_on: Utc::now(),
-                total_damage: 0,
-                participants: vec![],
-                boss: Boss { id: 1 }
-            };
 
-            loop {
-                
-                encounter.total_damage += 1;
+        let handle = std::thread::spawn(move || {
+            let rt = Runtime::new().expect("Failed to create runtime");
+
+            rt.block_on(async {
+                let mut fake_encounter = FakeEncounter::new();
+
+                loop {
     
-                app_handle.emit("encounter-update", &encounter).unwrap();
+                    fake_encounter.tick();
     
-                sleep(duration).await;
-            }
+                    let encounter = fake_encounter.get();
+        
+                    app_handle.emit("encounter-update", encounter).unwrap();
+        
+                    sleep(duration).await;
+                }
+            })
         });
-
         self.handle = Some(handle);
     }
 
     pub async fn stop(&mut self) -> Result<()> {
         if let Some(handle) = self.handle.take() {
-            handle.await?;
+            handle.join()
+                .map_err(|err| anyhow::anyhow!("{:?}", err))?;
         }
 
         Ok(())

@@ -4,17 +4,17 @@
   "version": "0.1.0",
   "identifier": "com.lost.metrics.app",
   "build": {
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:5173",
     "frontendDist": "../web/dist"
   },
   "app": {
     "windows": [
       {
         "label": "main",
-        "title": "Meter",
+        "title": "Lost Metrics",
         "fullscreen": false,
-        "width": 500,
-        "height": 350,
+        "width": 1024,
+        "height": 768,
         "resizable": true,
         "decorations": true,
         "transparent": false,
@@ -22,17 +22,6 @@
         "minHeight": 120,
         "alwaysOnTop": true,
         "visible": true
-      },
-      {
-        "label": "logs",
-        "title": "History",
-        "url": "logs",
-        "minWidth": 650,
-        "minHeight": 300,
-        "width": 800,
-        "height": 500,
-        "decorations": true,
-        "visible": false
       }
     ],
     "security": {
@@ -55,7 +44,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJFODY2MkQxRkRGQUNFRkIKUldUN3p2cjkwV0tHTHRKemo5WlhIRnpWZEVlTW1QcXRuNmZ1K2tCT3FyMjZxNXJla29aeUsrMzYK",
       "endpoints": [
-        "https://github.com/averageeucplayer/lost-metrics-app/releases/latest/download/latest.json"
+        "https://github.com/averageeucplayer/lost-metrics/releases/latest/download/latest.json"
       ]
     }
   }

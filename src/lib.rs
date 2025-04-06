@@ -14,7 +14,9 @@ mod aws_iprange;
 mod processor;
 mod app_ready_state;
 mod settings_manager;
+mod background_worker;
 mod error;
+mod fake_encounter;
 
 pub fn run() {
     hook::set_hook();

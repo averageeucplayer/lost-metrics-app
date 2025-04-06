@@ -137,6 +137,7 @@ impl ProcessWatcher {
 
     fn match_ip(prefixes: &[IpPrefix], ip_addr: &IpAddr) -> Result<Option<String>> {
         for prefix in prefixes {
+            println!("{:?} {:?}", prefix, ip_addr);
             let network: IpNetwork = prefix.ip_prefix.parse()?;
             if network.contains(*ip_addr) {
                 return Ok(Some(prefix.region.clone()));

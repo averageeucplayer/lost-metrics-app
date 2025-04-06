@@ -2,11 +2,11 @@ use std::{error::Error, sync::Arc, time::Duration};
 
 use chrono::Utc;
 use log::*;
-use tauri::{async_runtime::JoinHandle, AppHandle, Emitter};
+use tauri::{async_runtime::JoinHandle, AppHandle, Emitter, Listener};
 use tauri_plugin_updater::{Result, Update, Updater, UpdaterExt};
 use tokio::{sync::{Mutex, Notify}, time::sleep};
 
-use crate::models::{UpdaterResult, UpdaterState};
+use crate::{models::{UpdaterResult, UpdaterState}, process_watcher::ProcessWatcher};
 
 pub struct AppUpdater {
     handle: Option<JoinHandle<()>>,
@@ -144,7 +144,11 @@ pub async fn setup_update_checker(app_handle: AppHandle, app_updater: Arc<Mutex<
     match update_result {
         UpdaterState::NewVersion => {
 
-            app_handle.emit("updater", "new-version")?;
+            let mut result = UpdaterResult {
+                checked_on: Utc::now(),
+                state: UpdaterState::NewVersion,
+            };
+            app_handle.emit("updater", result)?;
             let mut app_updater = app_updater.lock().await;
             
             match app_updater.download_and_install().await {
@@ -167,4 +171,49 @@ pub async fn setup_update_checker(app_handle: AppHandle, app_updater: Arc<Mutex<
     }
 
     anyhow::Ok(())
+}
+
+pub fn setup_update_checker_callbacks(
+    app_handle: AppHandle,
+    app_updater: Arc<Mutex<AppUpdater>>,
+    process_watcher: Arc<Mutex<ProcessWatcher>>) {
+    {
+        let app_updater = app_updater.clone();
+        let app_handle_emit = app_handle.clone();
+        app_handle.listen_any("check-update", move |event| {
+            match app_updater.try_lock() {
+                Ok(app_updater) => {
+
+                    if app_updater.is_background_checker_running() {
+                        app_updater.force_periodic_check();
+                    }
+
+                },
+                Err(err) => {
+                    let mut result = UpdaterResult {
+                        checked_on: Utc::now(),
+                        state: UpdaterState::Error(err.to_string()),
+                    };
+
+                    app_handle_emit.emit("updater", result).unwrap();
+                },
+            };
+            
+        });
+    }
+
+    {
+        let app_updater = app_updater.clone();
+        let process_watcher = process_watcher.clone();
+        app_handle.listen_any("install-update", move |event| {
+            let app_updater = app_updater.clone();
+            let process_watcher = process_watcher.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut app_updater = app_updater.lock().await;
+                app_updater.stop().await;
+                let mut process_watcher = process_watcher.lock().await;
+                process_watcher.stop().unwrap();
+            });
+        });
+    }
 }
